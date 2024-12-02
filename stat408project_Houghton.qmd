@@ -1,0 +1,493 @@
+---
+title: "stat408project_Houghton"
+author: "Grace Houghton"
+format: html
+editor: visual
+---
+
+## Stat 408 Project
+
+Step 1 and 2:
+
+```{r}
+library(tidyverse)
+#read in both data sets
+batting2021 <- read.csv("Data/batting2021.csv")
+batting2022 <- read.csv("Data/batting2022.csv")
+
+#combine data sets
+batting2122 <- rbind(batting2021, batting2022)
+#batting2122
+
+#clean the dataset
+#sum(is.na(batting2122))
+#have one NA value will make NA=0
+batting2122 <- apply(batting2122, 2, function(x) ifelse(is.na(x), 0, x))
+batting2122 <- as.data.frame(batting2122)
+
+#check for NA values again
+#sum(is.na(batting2122)) #clean of NA
+
+#clean data by making the variables numeric besides Player and Team
+library(dplyr)
+exclude_cols <- c("Player", "Team")
+batting2122 <- batting2122 %>% mutate(across(-one_of(exclude_cols), ~ as.numeric(as.character(.))))
+
+#minimum AB 50
+#AB 100 took out to much data
+batting2122_clean <- batting2122 %>% filter(AB >= 50)
+summary(batting2122_clean)
+
+#want to see how many different teams are represented in my new dataset
+team <- unique(batting2122_clean$Team)
+num_teams <- length(team)
+print(num_teams)
+
+#want to see how many different players are represented in my new dataset
+player <- unique(batting2122_clean$Player)
+num_player <- length(player)
+print(num_player)
+
+#specific statistics
+
+#batting average statistics
+mean(batting2122_clean$BA)
+median(batting2122_clean$BA)
+
+#hit statistics
+mean(batting2122_clean$H)
+median(batting2122_clean$H)
+
+#at bat statistics
+mean(batting2122_clean$AB)
+median(batting2122_clean$AB)
+
+#since BA is calculated by H/AB lets look at their plots
+#create some scatter plots
+
+#plot for hits
+ggplot(batting2122_clean, aes(x=H, y=BA)) + geom_point(color = "pink")+ labs(title = "Hits vs Batting Average", x = "Hits", y = "Batting Average") + theme_minimal()
+
+#plot for at bats
+ggplot(batting2122_clean, aes(x=AB, y=BA)) + geom_point()+ geom_point(color = "pink")+ labs(title = "At-Bats vs Batting Average", x = "At-Bats", y = "Batting Average") + theme_minimal()
+```
+
+Step 3:
+
+```{r}
+#create maximum model
+#checking for polynomial terms
+ggplot(aes(x= Player, y = BA), data = batting2122_clean) + geom_point()
+ggplot(aes(x= Team, y = BA), data = batting2122_clean) + geom_point()
+ggplot(aes(x= OBP, y = BA), data = batting2122_clean) + geom_point()
+ggplot(aes(x= SLG, y = BA), data = batting2122_clean) + geom_point()
+ggplot(aes(x= OPS, y = BA), data = batting2122_clean) + geom_point()
+ggplot(aes(x= GP, y = BA), data = batting2122_clean) + geom_point()
+ggplot(aes(x= PA, y = BA), data = batting2122_clean) + geom_point()
+ggplot(aes(x= AB, y = BA), data = batting2122_clean) + geom_point()
+ggplot(aes(x= R, y = BA), data = batting2122_clean) + geom_point()
+ggplot(aes(x= H, y = BA), data = batting2122_clean) + geom_point()
+ggplot(aes(x= X2B, y = BA), data = batting2122_clean) + geom_point()
+ggplot(aes(x= X3B, y = BA), data = batting2122_clean) + geom_point()
+ggplot(aes(x= HR, y = BA), data = batting2122_clean) + geom_point()
+ggplot(aes(x= RBI, y = BA), data = batting2122_clean) + geom_point()
+ggplot(aes(x= HBP, y = BA), data = batting2122_clean) + geom_point()
+ggplot(aes(x= BB, y = BA), data = batting2122_clean) + geom_point()
+ggplot(aes(x= K, y = BA), data = batting2122_clean) + geom_point()
+ggplot(aes(x= SB, y = BA), data = batting2122_clean) + geom_point()
+ggplot(aes(x= CS, y = BA), data = batting2122_clean) + geom_point()
+
+#checking for interaction terms
+#exclude Player and Team because they are categorical variables
+library(dplyr)
+batting2122_clean_numeric <- batting2122_clean %>% select(-Player, -Team)
+
+#calculate correlation matrix
+cor_matrix <- cor(batting2122_clean_numeric)
+cor_matrix
+
+#convert to a data frame and filter
+cor_dataframe <- as.data.frame(as.table(cor_matrix))
+strong_correlations <- cor_dataframe %>% filter(abs(Freq)>0.9 & Freq != 1)
+strong_correlations
+```
+
+Player and Team are categorical variables, so I will not add a polynomial term. The plots for OBP, SLG, OPS, R, and H are linear, so I will not add a polynomial term. Due to the size of my dataset and the large number of polynomial and interaction terms, I will not add polynomial terms for RBI, HBP, BB, SB, and CS because they do not have a solid correlation to BA. I am adding polynomial terms for GP, PA, AB, X2B, X3B, HR, and K because their plots are not linear. I used the correlation matrix to decide which interaction terms to add. I will add interaction terms for OPS:SLG and PA:AB because they have the highest correlation.
+
+```{r}
+#maximum model with specific interaction terms and polynomial terms
+mod_max <- lm(BA ~ OPS:SLG + PA:AB + I(GP^2) + I(PA^2) + I(AB^2) + I(X2B^2) + I(X3B^2) + I(HR^2) + I(K^2), batting2122_clean)
+summary(mod_max)
+```
+
+```{r}
+#backward selection with Mallow's Cp
+library(leaps)
+var_sel <- regsubsets(BA ~ OPS:SLG + PA:AB + I(GP^2) + I(PA^2) + I(AB^2) + I(X2B^2) + I(X3B^2) + I(HR^2) + I(K^2), batting2122_clean, method = "backward", nvmax = 100, really.big=TRUE)
+#minimizes the Mallow's Cp
+which.min(summary(var_sel)$cp)
+#write the final regression model
+coef(var_sel,8)
+#create mod_best using regression model
+mod_best <- lm(BA ~ I(GP^2) + I(AB^2) + I(X2B^2) + I(X3B^2) + I(HR^2) + I(K^2) + OPS:SLG + PA:AB, batting2122_clean)
+
+#homoscedasticity
+#residual plot
+plot(mod_best,1)
+#BP test
+library(lmtest)
+bptest(mod_best)
+#normality
+#QQ plot
+plot(mod_best,2)
+#KS test
+ks.test(residuals(mod_best), "pnorm", sd=summary(mod_best)$s)
+
+#calculate the AIC
+AIC(mod_best, k=2)
+#get standard error value
+summary(mod_best)
+```
+
+The estimated standard error for "best" model is $0.02677$.
+
+To check the goodness of fit, we will check the assumptions of normality and homoscedasticity. From the residual plot for homoscedasticity, the residuals appear to be somewhat randomly scattered and somewhat evenly spread across the fitted values. Also, the $p-value = <2.2*10^{-16} < \alpha = 0.05$, so the assumption of homoscedasticity is violated. From the QQ plot for normality distributed residuals, the points fall close to the 45-degree line with a slight deviation at the right end. Also, the $p-value = 6.734*10^{-05} < \alpha = 0.05$, so the assumption of normality is violated. Therefore, the assumption of homoscedasticity and normality are violated.
+
+The AIC of the "best" model is $-19224.57$.
+
+Since there were violations to both homoscedasticity and normality, suggest I need to do something else with my data before continuing. Since the QQ plot deviates up on the right side i will do a log transformation.
+
+```{r}
+#log transformation of the max model
+mod_log <- lm(log(BA) ~ OPS:SLG + PA:AB + I(GP^2) + I(PA^2) + I(AB^2) + I(X2B^2) + I(X3B^2) + I(HR^2) + I(K^2), batting2122_clean)
+summary(mod_log)
+
+#redo variable selection
+#backward selection with Mallow's Cp
+library(leaps)
+var_sel2 <- regsubsets(log(BA)~ OPS:SLG + PA:AB + I(GP^2) + I(PA^2) + I(AB^2) + I(X2B^2) + I(X3B^2) + I(HR^2) + I(K^2), batting2122_clean, method = "backward", nvmax = 100, really.big=TRUE)
+#minimizes the Mallow's Cp
+which.min(summary(var_sel2)$cp)
+#write the final regression model
+coef(var_sel2,8)
+#create mod_best using regression model
+mod_best2 <- lm(BA ~ I(GP^2) + I(PA^2) + I(AB^2) + I(X2B^2) +(X3B^2) + I(HR^2) + I(K^2) + OPS:SLG, batting2122_clean)
+
+#homoscedasticity
+#residual plot
+plot(mod_best2,1)
+#BP test
+library(lmtest)
+bptest(mod_best2)
+#normality
+#QQ plot
+plot(mod_best2,2)
+#KS test
+ks.test(residuals(mod_best2), "pnorm", sd=summary(mod_best2)$s)
+
+#calculate the AIC
+AIC(mod_best2, k=2)
+#get standard error value
+summary(mod_best2)
+```
+
+The estimated standard error for the "best" model is $0.02687$.
+
+To check the goodness of fit, we will check the assumptions of normality and homoscedasticity. From the residual plot for homoscedasticity, the residuals appear to be somewhat randomly scattered and somewhat evenly spread across the fitted values. Also, the $p-value = <2.2*10^{-16} < \alpha = 0.05$, so the assumption of homoscedasticity is violated. From the QQ plot for normality distributed residuals, the points fall close to the 45-degree line with a slight deviation at the right end. Also, the $p-value = 7.582*10^{-05} < \alpha = 0.05$, so the assumption of normality is violated. Therefore, the assumption of homoscedasticity and normality are violated.
+
+The AIC of the "best" model is $-19194.18$.
+
+Since there were violations to both homoscedasticity and normality, suggest I need to do something else with my data before continuing. Now, I will try a square root transformation.
+
+```{r}
+mod_sqrt <- lm(sqrt(BA) ~ OPS:SLG + PA:AB + I(GP^2) + I(PA^2) + I(AB^2) + I(X2B^2) + I(X3B^2) + I(HR^2) + I(K^2), batting2122_clean)
+summary(mod_sqrt)
+
+#redo variable selection
+#backward selection with Mallow's Cp
+library(leaps)
+var_sel3 <- regsubsets(sqrt(BA) ~ OPS:SLG + PA:AB + I(GP^2) + I(PA^2) + I(AB^2) + I(X2B^2) + I(X3B^2) + I(HR^2) + I(K^2), batting2122_clean, method = "backward", nvmax = 100, really.big=TRUE)
+#minimizes the Mallow's Cp
+which.min(summary(var_sel3)$cp)
+#write the final regression model
+coef(var_sel3,8)
+#create mod_best using regression model
+mod_best3 <- lm(BA ~ I(GP^2) + I(PA^2) + I(AB^2) + I(X2B^2) + I(X3B^2) + I(HR^2) + I(K^2) + OPS:SLG, batting2122_clean)
+
+#homoscedasticity
+#residual plot
+plot(mod_best3,1)
+#BP test
+library(lmtest)
+bptest(mod_best3)
+#normality
+#QQ plot
+plot(mod_best3,2)
+#KS test
+ks.test(residuals(mod_best3), "pnorm", sd=summary(mod_best3)$s)
+
+#calculate the AIC
+AIC(mod_best3, k=2)
+#get standard error value
+summary(mod_best3)
+```
+
+The estimated standard error for the "best" model is $0.02678$.
+
+To check the goodness of fit, we will check the assumptions of normality and homoscedasticity. From the residual plot for homoscedasticity, the residuals appear to be somewhat randomly scattered and somewhat evenly spread across the fitted values. Also, the $p-value = <2.2*10^{-16} < \alpha = 0.05$, so the assumption of homoscedasticity is violated. From the QQ plot for normality distributed residuals, the points fall close to the 45-degree line with a slight deviation at the right end. Also, the $p-value = 5.257*10^{-05} < \alpha = 0.05$, so the assumption of normality is violated. Therefore, the assumption of homoscedasticity and normality are violated.
+
+The AIC of the "best" model is $-19224.19$.
+
+Since there were violations to both homoscedasticity and normality, suggest I need to do something else with my data before continuing. Now, I will try weighted least squares.
+
+```{r}
+#weighted least squares
+library(nlme)
+mod_wls <- gls(BA~OPS:SLG + PA:AB + I(GP^2) + I(PA^2) + I(AB^2) + I(X2B^2) + I(X3B^2) + I(HR^2) + I(K^2), batting2122_clean)
+summary(mod_wls)
+
+#redo variable selection
+#backward selection with Mallow's Cp
+library(leaps)
+var_sel4 <- regsubsets(BA ~ OPS:SLG + PA:AB + I(GP^2) + I(PA^2) + I(AB^2) + I(X2B^2) + I(X3B^2) + I(HR^2) + I(K^2), batting2122_clean, method = "backward", nvmax = 100, really.big=TRUE)
+#minimizes the Mallow's Cp
+which.min(summary(var_sel4)$cp)
+#write the final regression model
+coef(var_sel4,8)
+#create mod_best using regression model
+mod_best4 <- lm(BA ~ I(GP^2) + I(AB^2) + I(X2B^2) + I(X3B^2) + I(HR^2) + I(K^2) + OPS:SLG + PA:AB, batting2122_clean)
+
+#homoscedasticity
+#residual plot
+plot(mod_best4,1)
+#BP test
+library(lmtest)
+bptest(mod_best4)
+#normality
+#QQ plot
+plot(mod_best4,2)
+#KS test
+ks.test(residuals(mod_best4), "pnorm", sd=summary(mod_best4)$s)
+
+#calculate the AIC
+AIC(mod_best4, k=2)
+#get standard error value
+summary(mod_best4)
+```
+
+The estimated standard error for the "best" model is $0.02677$.
+
+To check the goodness of fit, we will check the assumptions of normality and homoscedasticity. From the residual plot for homoscedasticity, the residuals appear to be somewhat randomly scattered and somewhat evenly spread across the fitted values. Also, the $p-value = <2.2*10^{-16} < \alpha = 0.05$, so the assumption of homoscedasticity is violated. From the QQ plot for normality distributed residuals, the points fall close to the 45-degree line with a slight deviation at the right end. Also, the $p-value = 6.734*10^{-05} < \alpha = 0.05$, so the assumption of normality is violated. Therefore, the assumption of homoscedasticity and normality are violated.
+
+The AIC of the "best" model is $-19224.57$.
+
+Since there were violations to both homoscedasticity and normality, suggest I need to do something else with my data before continuing. Now, I will try robust regression.
+
+```{r}
+#robust regression
+library(MASS)
+mod_robust <- rlm(BA ~ OPS:SLG + PA:AB + I(GP^2) + I(PA^2) + I(AB^2) + I(X2B^2) + I(X3B^2) + I(HR^2) + I(K^2), batting2122_clean)
+summary(mod_robust)
+
+#redo variable selection
+#backward selection with Mallow's Cp
+library(leaps)
+var_sel5 <- regsubsets(BA ~ OPS:SLG + PA:AB + I(GP^2) + I(PA^2) + I(AB^2) + I(X2B^2) + I(X3B^2) + I(HR^2) + I(K^2), batting2122_clean, method = "backward", nvmax = 100, really.big=TRUE)
+#minimizes the Mallow's Cp
+which.min(summary(var_sel5)$cp)
+#write the final regression model
+coef(var_sel5,8)
+#create mod_best using regression model
+mod_best5 <- lm(BA ~ I(GP^2) + I(AB^2) + I(X2B^2) + I(X3B^2) + I(HR^2) + I(K^2) + OPS:SLG + PA:AB, batting2122_clean)
+
+#homoscedasticity
+#residual plot
+plot(mod_best5,1)
+#BP test
+library(lmtest)
+bptest(mod_best5)
+#normality
+#QQ plot
+plot(mod_best5,2)
+#KS test
+ks.test(residuals(mod_best5), "pnorm", sd=summary(mod_best5)$s)
+
+
+#calculate the AIC
+AIC(mod_best5, k=2)
+#get standard error value
+summary(mod_best5)
+```
+
+The estimated standard error for the "best" model is $0.02677$.
+
+To check the goodness of fit, we will check the assumptions of normality and homoscedasticity. From the residual plot for homoscedasticity, the residuals appear to be somewhat randomly scattered and somewhat evenly spread across the fitted values. Also, the $p-value = <2.2*10^{-16} < \alpha = 0.05$, so the assumption of homoscedasticity is violated. From the QQ plot for normality distributed residuals, the points fall close to the 45-degree line with a slight deviation at the right end. Also, the $p-value = 6.734*10^{-05} < \alpha = 0.05$, so the assumption of normality is violated. Therefore, the assumption of homoscedasticity and normality are violated.
+
+The AIC of the "best" model is $-19224.57$.
+
+Checking the multicollinearity of my max model.
+
+```{r}
+#CHECK MULTICOLLINEARITY of max model
+library(car)
+vif_values <- vif(mod_max)
+vif_values
+
+#remove PA:AB
+mod_max7 <- lm(BA ~ OPS:SLG + I(GP^2) + I(PA^2) + I(AB^2) + I(X2B^2) + I(X3B^2) + I(HR^2) + I(K^2), batting2122_clean)
+summary(mod_max7)
+vif_values <- vif(mod_max7)
+vif_values
+
+#remove I(PA^2)
+mod_max8 <- lm(BA ~ OPS:SLG + I(GP^2) + I(AB^2) + I(X2B^2) + I(X3B^2) + I(HR^2) + I(K^2), batting2122_clean)
+summary(mod_max8)
+vif_values <- vif(mod_max8)
+vif_values
+
+#AFTER DEALING WITH MULTI
+#backward selection with Mallow's Cp
+library(leaps)
+var_sel8 <- regsubsets(BA ~ OPS:SLG + I(GP^2) + I(AB^2) + I(X2B^2) + I(X3B^2) + I(HR^2) + I(K^2), batting2122_clean, method = "backward", nvmax = 100, really.big=TRUE)
+#minimizes the Mallow's Cp
+which.min(summary(var_sel8)$cp)
+#write the final regression model
+coef(var_sel8,7)
+#create mod_best using regression model
+mod_best8 <- lm(BA ~ I(GP^2) + I(AB^2) + I(X2B^2) + I(X3B^2) + I(HR^2) + I(K^2) + OPS:SLG, batting2122_clean)
+
+#homoscedasticity
+#residual plot
+plot(mod_best8,1)
+#BP test
+library(lmtest)
+bptest(mod_best8)
+#normality
+#QQ plot
+plot(mod_best8,2)
+#KS test
+ks.test(residuals(mod_best8), "pnorm", sd=summary(mod_best8)$s)
+
+
+#calculate the AIC
+AIC(mod_best8, k=2)
+#get standard error value
+summary(mod_best8)
+```
+
+The estimated standard error for the "best" model is $0.02695$.
+
+To check the goodness of fit, we will check the assumptions of normality and homoscedasticity. From the residual plot for homoscedasticity, the residuals appear to be somewhat randomly scattered and somewhat evenly spread across the fitted values. Also, the $p-value = <2.2*10^{-16} < \alpha = 0.05$, so the assumption of homoscedasticity is violated. From the QQ plot for normality distributed residuals, the points fall close to the 45-degree line with a slight deviation at the right end. Also, the $p-value = 4.452*10^{-05} < \alpha = 0.05$, so the assumption of normality is violated. Therefore, the assumption of homoscedasticity and normality are violated.
+
+The AIC of the "best" model is $-19167.22$.
+
+Notice all the AIC values are very close, which means they have a similar fits to the data. P-values are also very similar and assumptions are always violated. Tried all the transformations and now them seemed to be a good fit for the data due to the violations. There could be a model that works, but we have not succeeded one of those in this class. Due to this, I will use the "best" model that was checked to multicollinearity and will continue the analysis using that model.
+
+Step 4:
+
+```{r}
+#using mod_best8 which is the max model with the multicollinearity checked
+
+#present the results of the linear regression model
+coef(var_sel8,7)
+#create mod_best using regression model
+mod_best8 <- lm(BA ~ I(GP^2) + I(AB^2) + I(X2B^2) + I(X3B^2) + I(HR^2) + I(K^2) + OPS:SLG, batting2122_clean)
+
+#interpret the coefficients of the model, including their signifiance and direction
+coef(mod_best8)
+summary(mod_best8)
+#I(GP^2) = -1.702369*10^{-05}
+#For every 1 unit increase in GP, the predicted batting average will decrease by -1.702369*10^{-05}, holding all other variables constant. Notice the p-value is 2*10^-16 indicates the coefficient is statistically significant. 
+
+#I(AB^2) = 4.173*10^{-06}
+#For every 1 unit increase in AB, the predicted batting average will increase by 4.173*10^{-06}, holding all other variables constant. Notice the p-value is 2*10^-16 indicates the coefficient is statistically significant.
+
+#I(X2B^2) = -1.651*10^{-04}
+#For every 1 unit increase in X2B, the predicted batting average will decrease by -1.651*10^{-04}, holding all other variables constant. Notice the p-value is 2*10^-16 indicates the coefficient is statistically significant.
+
+#I(X3B^2) = -6.131*10^{-04}
+#For every 1 unit increase in X3B,the predicted batting average will decrease by -6.131*10^{-04}, holding all other variables constant. Notice the p-value is 1*10^-15 indicates the coefficient is statistically significant.
+
+#I(HR^2) = -4.578416*10^{-04}
+#For every 1 unit increase in HR,the predicted batting average will decrease by -4.578416*10^{-04}, holding all other variables constant. Notice the p-value is 2*10^-16 indicates the coefficient is statistically significant.
+
+#I(K^2) = -2.346279*10^{-05}
+#For every 1 unit increase in K,the predicted batting average will decrease by -2.346279*10^{-05}, holding all other variables constant. Notice the p-value is 2*10^-16 indicates the coefficient is statistically significant.
+
+#OPS:SLG = 0.3298
+#For every 1 unit increase in OPS:SLG,the predicted batting average will increase by 0.3298 holding all other variables constant. Notice the p-value is 2*10^-16 indicates the coefficient is statistically significant.
+
+#discuss overall fit of the model and its predictive power
+#lets look at the r^2 value
+r2 <- summary(mod_best8)$r.squared
+r2
+#80.7% of the variabililty in batting average can be explained through a linear relationship with I(GP^2), I(AB^2), I(X2B^2), I(X3B^2), I(HR^2), I(K^2), and OPS:SLG.
+
+#High r2 suggest the model provides a good fit for the data, so it would be reliable for making predictions.
+
+#predictions
+#create new dataframe with values
+new_data8 <- data.frame(
+  GP = c(40, 50, 55, 60, 65),
+  AB = c(100, 150, 170, 200, 225),
+  X2B = c(10, 15, 20, 25, 27),
+  X3B = c(3, 5, 7, 9, 10),
+  HR = c(10, 15, 20, 25, 30),
+  K = c(10, 20, 25, 30, 35),
+  OPS = c(0.450, 0.500, 0.550, 0.600, 0.640),
+  SLG = c(0.500, 0.600, 0.700, 0.800, 0.900)
+)
+predictbest8 <- predict(mod_best8, new_data8)
+
+#plot HR vs predicted BA 
+ggplot() +
+  geom_point(aes(x=new_data8$HR, y = predictbest8), color = "pink") + geom_line(aes(x=new_data8$HR, y = predictbest8), color = "pink") + labs(title = "Home Runs vs Predicted Batting Average", x = "Home Runs", y = "Predicted Batting Average") + theme_minimal()
+
+#provide insight based on the regression results
+
+#Increase in GP slightly decreasing batting average makes sense.
+#More AB leading to higher batting average also makes sense.
+#X2B and X3B, suggest focusing on other factors to increase BA then trying to hit doubles and triples (this would increase SLG).
+#HR this negative affect suggest you should reduce HR, but those are helpful.
+#K this negative affect suggest reducing K's to help increase BA, makes sense.
+#OPS:SLG positive interaction that good OPS and SLG can boost batting average, makes sense. 
+```
+
+Step 5:
+
+```{r}
+#evalute the strengths and weakness of the linear regression analysis
+#will discuss in paper
+
+#discuss limitations of the study, data constraints or model assumptions
+#will discuss in paper
+
+#consider alternative approaches or models that could improve the analysis
+#LASSO
+library(glmnet)
+x <- model.matrix(BA ~ OBP + SLG + OPS + GP + PA + AB + R + H + X2B + X3B + HR + RBI + HBP + BB + K + SB + CS, batting2122_clean)
+y <- batting2122_clean$BA
+mod_lasso <- cv.glmnet(x,y,alpha=1)
+best_lambda <- mod_lasso$lambda.min
+best_lambda
+coefs_lasso <- coef(mod_lasso, s= best_lambda)
+coefs_lasso
+#from LASSO, PA, R, and CS are zero
+
+predictions <- predict(mod_lasso, newx=x, s = best_lambda)
+
+#create dataframe with actual and predicted value
+library(ggplot2)
+results <- data.frame(Actual = y, Predicted = as.vector(predictions))
+
+#plot
+ggplot(results, aes(x=Actual, y = Predicted)) + geom_point(alpha = 0.3, color = "blue") + geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") + labs(title= "Actual vs Predicted Batting Averages", x = "Actual Batting Averages", y = "Predicted Batting Average") + theme_minimal()
+
+#The blue points(predicted values) fall very close to the blue line (actual line), which indiactes that the LASSO model is good at predicting batting average. 
+
+#reflects on the implications of the findings and their relevance to the broader field
+#will discuss in paper
+
+#describe what you would have done if you had more time (future work)
+#will discuss in paper
+```
